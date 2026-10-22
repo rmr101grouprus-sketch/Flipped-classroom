@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quiz Battle | Flipped Classroom</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+:root{--brown:#4b3025;--gold:#f3c64e;--red:#a52d2d;--cream:#fbf6ee;--white:#fff;--ink:#241915}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--brown);font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 20px;color:#fff;background:#38231c;border-bottom:4px solid var(--gold)}
+.brand{font-weight:900;letter-spacing:.08em}.brand span{color:var(--gold)}.pill{background:#55382d;border:1px solid #775444;color:#f9e9c9;padding:7px 11px;border-radius:99px;font-size:13px}
+main{width:min(1000px,100%);margin:auto;padding:22px 14px 36px}.panel{background:var(--cream);border-radius:20px;padding:clamp(18px,4vw,32px);box-shadow:0 18px 55px #160b0870;margin:12px 0}
+h1{font-size:clamp(25px,4vw,38px);margin:7px 0 12px;color:var(--brown)}h2{margin-top:0;color:var(--brown)}p{line-height:1.5}.muted{color:#755c4d}.kicker{text-transform:uppercase;letter-spacing:.12em;color:#8b6b40;font-size:12px;font-weight:800}
+input,select{width:100%;padding:13px 14px;border:1px solid #d8c7b4;border-radius:10px;font-size:16px;background:white;color:var(--ink);margin:7px 0 14px}
+button{border:0;border-radius:10px;padding:13px 17px;font-weight:800;font-size:15px;cursor:pointer}.primary{background:var(--red);color:white}.secondary{background:#eadfce;color:var(--brown)}button:disabled{opacity:.5;cursor:not-allowed}
+.actions{display:flex;gap:10px;flex-wrap:wrap}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.hidden{display:none!important}
+.roomcode{font-size:clamp(35px,8vw,58px);font-weight:900;letter-spacing:.12em;color:var(--red);text-align:center;background:#f0e5d3;padding:12px;border-radius:14px}
+.list{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:14px 0}.player{background:#f0e5d3;padding:11px;border-radius:9px;font-weight:700;display:flex;justify-content:space-between;gap:8px}
+.question{background:#fff;border:1px solid #eadfce;border-radius:16px;padding:20px;margin:12px 0}.qmeta{display:flex;justify-content:space-between;gap:10px;color:#735b4b;font-size:14px}
+.answers{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}.answer{min-height:74px;color:white;text-align:left;font-size:15px;display:flex;gap:10px;align-items:center;line-height:1.35}.answer:nth-child(4n+1){background:#c43e42}.answer:nth-child(4n+2){background:#2879a9}.answer:nth-child(4n+3){background:#d49b19;color:#241915}.answer:nth-child(4n){background:#39815c}.answer.selected{outline:4px solid #241915;outline-offset:-4px}.answer.correct{outline:4px solid #1f7548;outline-offset:-4px}.answer.wrong{opacity:.65}
+.timer{height:9px;background:#eadfce;border-radius:99px;overflow:hidden;margin:12px 0}.timer div{height:100%;width:100%;background:var(--gold);transition:width 1s linear}
+.score{font-size:30px;color:var(--red);font-weight:900}.notice{padding:12px 14px;background:#f0e5d3;border-radius:10px;margin:12px 0}.error{background:#ffeded;color:#8b1e25;padding:10px;border-radius:8px}
+footer{text-align:center;color:#e5cbb8;font-size:12px;padding:18px}
+@media(max-width:620px){header{padding:12px}.grid,.answers{grid-template-columns:1fr}.panel{padding:18px}.answer{min-height:62px}}
+</style></head>
+<body>
+<header><div class="brand">QUIZ <span>●</span> BATTLE</div><div class="pill">FLIPPED CLASSROOM · MULTIPLAYER</div></header>
+<main>
+<section id="home" class="panel">
+ <div class="kicker">Игра в реальном времени</div><h1>Flipped Classroom</h1>
+ <p class="muted">Преподаватель создаёт комнату, участники подключаются по PIN-коду и соревнуются за баллы. На разных телефонах всё синхронизируется через интернет.</p>
+ <div class="grid">
+  <div class="panel" style="box-shadow:none;margin:0;padding:18px">
+   <h2>👩‍🏫 Я преподаватель</h2><label>Имя преподавателя</label><input id="hostName" maxlength="30" placeholder="Например, Malika">
+   <label>Время на вопрос</label><select id="duration"><option value="15">15 секунд</option><option value="20" selected>20 секунд</option><option value="30">30 секунд</option><option value="45">45 секунд</option></select>
+   <button class="primary" id="createRoom">Создать комнату</button>
+  </div>
+  <div class="panel" style="box-shadow:none;margin:0;padding:18px">
+   <h2>🎮 Я участник</h2><label>Ваше имя</label><input id="playerName" maxlength="24" placeholder="Введите имя">
+   <label>PIN-код комнаты</label><input id="roomPin" maxlength="6" inputmode="numeric" placeholder="Например, 482193">
+   <button class="primary" id="joinRoom">Войти в игру</button>
+  </div>
+ </div><div id="homeMsg"></div>
+</section>
+<section id="lobby" class="panel hidden">
+ <div class="kicker">Комната создана</div><h1 id="lobbyTitle">Ожидание игроков</h1><p class="muted">Пусть участники откроют этот сайт на своих телефонах и введут PIN-код.</p>
+ <div class="roomcode" id="pinDisplay">------</div><p style="text-align:center">PIN-КОД КОМНАТЫ</p>
+ <h2>Участники (<span id="playerCount">0</span>)</h2><div id="players" class="list"></div>
+ <div class="actions"><button class="primary" id="startGame">Запустить игру</button><button class="secondary" id="closeRoom">Закрыть комнату</button></div><div id="lobbyMsg" class="muted"></div>
+</section>
+<section id="playerWait" class="panel hidden" style="text-align:center">
+ <div class="kicker">Ты в игре!</div><h1 id="welcomePlayer">Ожидаем преподавателя</h1><div class="roomcode" id="playerPin"></div><p class="muted">Когда преподаватель запустит вопрос, он появится здесь. Не закрывай страницу.</p>
+ <h2>Игроки</h2><div id="waitingPlayers" class="list"></div><div class="score">⭐ <span id="myScore">0</span></div>
+</section>
+<section id="game" class="panel hidden">
+ <div class="qmeta"><span id="questionNumber">ВОПРОС 1</span><span>⭐ <span id="gameScore">0</span></span></div><div class="timer"><div id="timerBar"></div></div>
+ <h1 id="questionText"></h1><div id="answerGrid" class="answers"></div><div id="answerStatus" class="notice hidden"></div>
+ <div id="hostControls" class="actions hidden" style="margin-top:18px"><button class="primary" id="reveal">Показать результат вопроса</button><button class="secondary" id="nextQuestion">Следующий вопрос →</button></div>
+ <div id="hostAnswerCount" class="muted"></div>
+</section>
+<section id="leaderboard" class="panel hidden">
+ <div class="kicker">Таблица лидеров</div><h1 id="boardTitle">Результаты</h1><div id="boardList" class="list"></div>
+ <div id="boardHostControls" class="actions"><button class="primary" id="boardNext">Продолжить →</button><button class="secondary" id="finishGame">Завершить игру</button></div>
+ <div id="finalText" class="hidden"></div>
+</section>
+</main><footer>Quiz Battle · Flipped Classroom</footer>
+<script>
+const questions = [
+ {q:"Что означает модель Flipped Classroom («перевёрнутый класс»)?",a:["Ученики выполняют всю работу только дома","Теоретический материал изучается дома, а практические задания выполняются в аудитории","Преподаватель полностью заменяется онлайн-платформой","Занятия проходят исключительно в формате лекций"],c:1,e:"В презентации теория изучается самостоятельно до урока, а аудиторное время отводится практике."},
+ {q:"Кто связан с развитием модели Flipped Classroom в презентации?",a:["Alison King, J. Wesley Baker, Jonathan Bergmann и Aaron Sams","Jean Piaget и Noam Chomsky","Stephen Krashen и Howard Gardner","B. F. Skinner и John Dewey"],c:0,e:"На слайдах упоминаются Alison King, J. Wesley Baker, а также Jonathan Bergmann и Aaron Sams."},
+ {q:"Какую проблему пытались решить Jonathan Bergmann и Aaron Sams?",a:["Недостаток учебников в университетах","Пропуски занятий учениками из-за спортивных соревнований","Отсутствие экзаменов","Слишком короткие учебные годы"],c:1,e:"Согласно презентации, они искали способ помочь ученикам, пропускавшим занятия из-за спортивных соревнований."},
+ {q:"Что обычно делает студент дома перед занятием?",a:["Проводит групповую дискуссию в аудитории","Сдаёт итоговый экзамен","Смотрит короткое видео и изучает конспект или статью","Выполняет все практические задания с преподавателем"],c:2,e:"Домашняя подготовка включает просмотр видео, чтение материалов и иногда короткий онлайн-тест."},
+ {q:"Что происходит в аудитории в модели Flipped Classroom?",a:["Только прослушивание лекции","Практика, обсуждение, групповая работа и решение задач","Только просмотр видеозаписи","Самостоятельное чтение без взаимодействия"],c:1,e:"Аудиторное время используется для практики, обсуждений и решения сложных задач."},
+ {q:"Как меняется роль преподавателя?",a:["Он исчезает из учебного процесса","Он только читает лекцию","Он становится фасилитатором и наставником","Он отвечает только за выставление оценок"],c:2,e:"Преподаватель помогает студентам, консультирует их и модерирует командные обсуждения."},
+ {q:"Как меняется роль студента?",a:["От пассивного слушателя к активному участнику","От активного участника к наблюдателю","Студент больше не отвечает за обучение","Студент только копирует записи преподавателя"],c:0,e:"Студент берёт ответственность за подготовку, взаимодействие и управление своим временем."},
+ {q:"Что означает буква F в модели FLIP?",a:["Formal testing","Flexible Environment","Final examination","Fast learning"],c:1,e:"F означает Flexible Environment, то есть гибкую среду обучения."},
+ {q:"Что означает буква L в модели FLIP?",a:["Learning Culture","Lecture time","Language practice","Lesson plan"],c:0,e:"L означает Learning Culture, культуру обучения."},
+ {q:"Какое преимущество указано в презентации?",a:["Полное устранение домашней работы","Возможность пересматривать видео и сложные моменты","Отказ от взаимодействия с преподавателем","Одинаковый темп обучения для всех"],c:1,e:"Студенты могут ставить видео на паузу и пересматривать сложные фрагменты."},
+ {q:"Какая трудность может возникнуть при использовании перевёрнутого класса?",a:["Слишком много свободного времени у преподавателя","Цифровой барьер и нестабильный доступ к интернету","Невозможность проводить практические задания","Отсутствие необходимости готовиться"],c:1,e:"В презентации отмечены цифровой барьер и неравный доступ к интернету и устройствам."},
+ {q:"Какой цифровой инструмент позволяет встраивать вопросы в учебное видео?",a:["Edpuzzle","Miro","Google Docs","PowerPoint"],c:0,e:"Edpuzzle используется для интерактивных видео со встроенными вопросами."},
+ {q:"Для чего можно использовать Kahoot! или Quizizz?",a:["Для создания длинных печатных учебников","Для быстрой проверки знаний в начале урока","Для записи профессиональных видеолекций","Для замены всех дискуссий"],c:1,e:"В презентации Kahoot! и Quizizz представлены как инструменты быстрой экспресс-проверки знаний."},
+ {q:"Какой этап следует за созданием видео в предложенной организации занятия?",a:["Сразу выставить итоговую оценку","Проверить подготовку коротким онлайн-тестом","Отменить практическую часть","Повторить только лекцию"],c:1,e:"После создания видео предлагается провести короткий онлайн-тест, а затем организовать активную работу."},
+ {q:"Какой результат связывается с перевёрнутым обучением в презентации?",a:["Меньше общения и меньше практики","Переход к глубокому пониманию, сотрудничеству и более эффективному использованию аудиторного времени","Полный отказ от самостоятельной работы","Гарантированное отсутствие учебных трудностей"],c:1,e:"В заключении подчёркиваются глубокое понимание через практику, сотрудничество и эффективное использование времени в аудитории."}
+];
+const socket=io();
+const $=id=>document.getElementById(id);
+let role=null,room=null,playerId=null,localScore=0,selected=null,timerInterval=null,questionDeadline=0;
+function show(id){['home','lobby','playerWait','game','leaderboard'].forEach(x=>$(x).classList.toggle('hidden',x!==id))}
+function msg(id,text,error=false){$(id).innerHTML=text?(error?'<div class="error">'+escapeHtml(text)+'</div>':'<div class="notice">'+escapeHtml(text)+'</div>'):''}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+$('createRoom').onclick=()=>{role='host';socket.emit('createRoom',{name:$('hostName').value.trim()||'Преподаватель',duration:Number($('duration').value),questions},res=>{if(!res.ok){msg('homeMsg',res.error,true);return}room=res.pin;show('lobby');$('pinDisplay').textContent=room;$('lobbyTitle').textContent='Ожидание игроков';$('startGame').disabled=false;msg('lobbyMsg','Отправь участникам PIN-код: '+room)})};
+$('joinRoom').onclick=()=>{const name=$('playerName').value.trim(),pin=$('roomPin').value.trim();if(!name||!pin){msg('homeMsg','Введи имя и PIN-код комнаты.',true);return}role='player';socket.emit('joinRoom',{name,pin},res=>{if(!res.ok){msg('homeMsg',res.error,true);return}room=res.pin;playerId=res.playerId;localScore=0;$('welcomePlayer').textContent='Привет, '+name+'!';$('playerPin').textContent=room;$('myScore').textContent='0';show('playerWait')})};
+$('startGame').onclick=()=>socket.emit('startGame',{pin:room},res=>{if(!res.ok)msg('lobbyMsg',res.error,true)});
+$('closeRoom').onclick=()=>{socket.emit('closeRoom',{pin:room});location.reload()};
+socket.on('lobbyUpdate',data=>{if(data.pin!==room)return;const html=data.players.map((p,i)=>`<div class="player"><span>${i+1}. ${escapeHtml(p.name)}</span><span>⭐ ${p.score}</span></div>`).join('')||'<p>Пока никто не подключился.</p>';$('players').innerHTML=html;$('waitingPlayers').innerHTML=html;$('playerCount').textContent=data.players.length;if(role==='host')$('startGame').disabled=data.players.length===0});
+socket.on('gameStarted',data=>{if(data.pin!==room)return;show('game')});
+socket.on('newQuestion',data=>{if(data.pin!==room)return;selected=null;show('game');$('questionNumber').textContent=`ВОПРОС ${data.index+1} ИЗ ${data.total}`;$('questionText').textContent=data.question.q;$('answerGrid').innerHTML=data.question.a.map((a,i)=>`<button class="answer" data-i="${i}"><span>${['▲','◆','●','■'][i]}</span><span>${escapeHtml(a)}</span></button>`).join('');$('answerStatus').classList.add('hidden');$('hostControls').classList.toggle('hidden',role!=='host');$('nextQuestion').classList.add('hidden');$('reveal').classList.remove('hidden');$('hostAnswerCount').textContent='';$('gameScore').textContent=localScore;
+ if(role==='player')$('answerGrid').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(selected!==null)return;selected=Number(b.dataset.i);b.classList.add('selected');socket.emit('submitAnswer',{pin:room,choice:selected},res=>{if(!res.ok)msg('answerStatus',res.error,true);else{$('answerStatus').textContent='Ответ принят! Ждём остальных…';$('answerStatus').classList.remove('hidden')}})});
+ questionDeadline=Date.now()+data.duration*1000;clearInterval(timerInterval);const tick=()=>{const left=Math.max(0,questionDeadline-Date.now());$('timerBar').style.width=(left/(data.duration*1000)*100)+'%';if(left<=0)clearInterval(timerInterval)};tick();timerInterval=setInterval(tick,200);
+});
+socket.on('answerCount',data=>{if(data.pin===room&&role==='host')$('hostAnswerCount').textContent=`Ответили: ${data.answered} из ${data.total} участников`});
+$('reveal').onclick=()=>socket.emit('revealAnswers',{pin:room});
+socket.on('questionResults',data=>{if(data.pin!==room)return;clearInterval(timerInterval);$('answerGrid').querySelectorAll('button').forEach((b,i)=>{b.disabled=true;if(i===data.correct)b.classList.add('correct');if(role==='player'&&i===selected&&i!==data.correct)b.classList.add('wrong')});const me=data.players.find(p=>p.id===playerId);if(me){localScore=me.score;$('myScore').textContent=localScore;$('gameScore').textContent=localScore}
+ if(role==='player'){$('answerStatus').textContent=(selected===data.correct?'✅ Правильно! ':'Правильный ответ: ')+data.answer;$('answerStatus').classList.remove('hidden')}
+ if(role==='host'){$('reveal').classList.add('hidden');$('nextQuestion').classList.remove('hidden');$('hostAnswerCount').textContent='Правильный ответ: '+data.answer}
+});
+$('nextQuestion').onclick=()=>socket.emit('nextQuestion',{pin:room});
+socket.on('showLeaderboard',data=>{if(data.pin!==room)return;clearInterval(timerInterval);show('leaderboard');$('boardTitle').textContent=data.finished?'Итоговая таблица лидеров':'Таблица лидеров';$('boardList').innerHTML=data.players.map((p,i)=>`<div class="player"><span>${['🥇','🥈','🥉'][i]||`${i+1}.`} ${escapeHtml(p.name)}</span><span>⭐ ${p.score}</span></div>`).join('');$('boardHostControls').classList.toggle('hidden',role!=='host'||data.finished);$('finalText').classList.toggle('hidden',!data.finished);$('finalText').innerHTML=data.finished?'<h2>Игра завершена!</h2><button class="primary" onclick="location.reload()">Новая игра</button>':''});
+$('boardNext').onclick=()=>socket.emit('continueGame',{pin:room});
+$('finishGame').onclick=()=>socket.emit('finishGame',{pin:room});
+socket.on('roomError',data=>{if(data.pin===room)alert(data.message)});
+socket.on('roomClosed',data=>{if(data.pin===room){alert('Преподаватель закрыл комнату.');location.reload()}});
+</script></body></html>
